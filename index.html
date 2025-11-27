@@ -247,6 +247,15 @@
         
         // Bắt đầu
         loadURL();
+
+        // Lắng nghe postMessage từ iframe để reload khi app báo lỗi
+        window.addEventListener('message', function(event) {
+            // Có thể kiểm tra origin nếu muốn an toàn hơn
+            if (event.data && event.data.type === 'reload') {
+                console.log('[PARENT] Nhận yêu cầu reload từ iframe, thực hiện reload...');
+                window.location.reload();
+            }
+        });
     </script>
 </body>
 </html>
