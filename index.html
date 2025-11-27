@@ -63,8 +63,8 @@
     </div>
     
     <script>
-        // API endpoint để lấy tunnel URL mới nhất
-        const API_URL = 'https://raw.githubusercontent.com/monsterph9-ops/qlvtttb-redirect/main/current_url.txt';
+        // Dùng GitHub API thay vì raw URL để tránh cache
+        const GITHUB_API = 'https://api.github.com/repos/monsterph9-ops/qlvtttb-redirect/contents/current_url.txt';
         let tunnelUrl = '';
         let checkAttempts = 0;
         const MAX_ATTEMPTS = 60;
@@ -78,8 +78,18 @@
             try {
                 updateStatus('Đang tải URL từ GitHub...');
                 
-                const response = await fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'});
-                tunnelUrl = (await response.text()).trim();
+                // Dùng GitHub API để tránh cache
+                const response = await fetch(GITHUB_API + '?t=' + Date.now(), {
+                    cache: 'no-store',
+                    headers: {
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                // Decode base64
+                tunnelUrl = atob(data.content).trim();
                 
                 if (!tunnelUrl || !tunnelUrl.startsWith('http')) {
                     updateStatus('❌ URL không hợp lệ. Đang thử lại sau 3 giây...');
