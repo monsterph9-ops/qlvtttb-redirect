@@ -60,60 +60,41 @@
     <script>
         // API endpoint để lấy tunnel URL mới nhất
         const API_URL = 'https://raw.githubusercontent.com/monsterph9-ops/qlvtttb-redirect/main/current_url.txt';
-        const STORAGE_KEY = 'qlvtttb_current_url';
-        const CHECK_INTERVAL = 5000; // Kiểm tra mỗi 5 giây
-        
-        let currentUrl = localStorage.getItem(STORAGE_KEY);
-        let checkTimer = null;
         
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
         }
         
-        function redirectToApp(url) {
-            // Lưu URL hiện tại vào localStorage
-            localStorage.setItem(STORAGE_KEY, url);
+        function redirectToApp() {
+            updateStatus('Đang tải URL từ GitHub...');
             
-            // Chuyển hướng ngay
-            updateStatus('Đang chuyển hướng...');
-            window.location.replace(url.trim());
-        }
-        
-        function checkAndRedirect() {
             fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'})
                 .then(response => response.text())
-                .then(newUrl => {
-                    newUrl = newUrl.trim();
+                .then(url => {
+                    url = url.trim();
                     
-                    if (!newUrl || !newUrl.startsWith('http')) {
-                        updateStatus('Lỗi: URL không hợp lệ');
+                    if (!url || !url.startsWith('http')) {
+                        updateStatus('Lỗi: URL không hợp lệ. Vui lòng thử lại sau.');
                         return;
                     }
                     
-                    // Nếu chưa có URL hoặc URL thay đổi
-                    if (!currentUrl || currentUrl !== newUrl) {
-                        updateStatus('Phát hiện server mới, đang kết nối...');
-                        redirectToApp(newUrl);
-                    } else {
-                        // URL giống nhau, redirect luôn
-                        redirectToApp(newUrl);
-                    }
+                    updateStatus('Đang chuyển hướng đến ứng dụng...');
+                    
+                    // Redirect 1 lần duy nhất
+                    setTimeout(() => {
+                        window.location.href = url;
+                    }, 500);
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    updateStatus('Lỗi kết nối, đang thử lại...');
-                    
-                    // Nếu có URL cũ trong cache, thử dùng
-                    if (currentUrl) {
-                        setTimeout(() => {
-                            redirectToApp(currentUrl);
-                        }, 2000);
-                    }
+                    updateStatus('Lỗi kết nối đến GitHub. Vui lòng thử lại sau.');
                 });
         }
         
-        // Kiểm tra và redirect ngay khi load trang
-        checkAndRedirect();
+        // Chỉ redirect nếu đang ở trang GitHub Pages
+        if (window.location.hostname.includes('github.io')) {
+            redirectToApp();
+        }
     </script>
 </body>
 </html>
