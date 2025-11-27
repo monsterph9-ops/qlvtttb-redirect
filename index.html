@@ -114,7 +114,8 @@
     
     <script>
         // Dùng GitHub API thay vì raw URL để tránh cache
-        const GITHUB_API = 'https://api.github.com/repos/monsterph9-ops/qlvtttb-redirect/contents/current_url.txt';
+        // Đổi sang proxy server nội bộ để tránh cache và rate limit
+        const PROXY_API = 'https://script.google.com/macros/s/AKfycbyOYIcoV4Mw85R_rq9IInvB1nLTEmAGOtzaNLPfz9-5q_FBdr25Cr7JV3lue-0TmW5f/exec';
         let tunnelUrl = '';
         let checkAttempts = 0;
         const MAX_ATTEMPTS_PER_ROUND = 60;
@@ -144,32 +145,23 @@
         
         async function loadURL() {
             try {
-                updateStatus('Đang tải URL từ GitHub...');
-                
-                const response = await fetch(GITHUB_API + '?t=' + Date.now(), {
-                    cache: 'no-store',
-                    headers: { 'Accept': 'application/vnd.github.v3+json' }
-                });
-                
+                updateStatus('Đang tải URL từ proxy server...');
+                const response = await fetch(PROXY_API + '?t=' + Date.now(), { cache: 'no-store' });
                 const data = await response.json();
-                tunnelUrl = atob(data.content).trim();
-                
+                tunnelUrl = (data.url || '').trim();
                 if (!tunnelUrl || !tunnelUrl.startsWith('http')) {
                     updateStatus('❌ URL không hợp lệ. Đang thử lại sau 3 giây...');
                     setTimeout(loadURL, 3000);
                     return;
                 }
-                
                 console.log('[URL]', tunnelUrl);
-                
                 // Bắt đầu kiểm tra và load iframe
                 currentRound = 1;
                 checkAttempts = 0;
                 checkAndLoadIframe();
-                
             } catch (error) {
                 console.error('[ERROR]', error);
-                updateStatus('❌ Lỗi kết nối đến GitHub. Đang thử lại sau 5 giây...');
+                updateStatus('❌ Lỗi kết nối đến proxy server. Đang thử lại sau 5 giây...');
                 setTimeout(loadURL, 5000);
             }
         }
