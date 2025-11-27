@@ -4,62 +4,112 @@
     <meta charset="UTF-8">
     <title>Hệ thống Quản lý Vật tư</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
             font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 50px;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             color: white;
-            margin: 0;
+            z-index: 9999;
+            transition: opacity 0.5s;
         }
-        .container {
-            background: white;
-            color: #333;
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-            max-width: 500px;
-            margin: 0 auto;
-        }
-        .loading {
-            font-size: 18px;
-            margin: 20px 0;
+        #loading.hidden {
+            opacity: 0;
+            pointer-events: none;
         }
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 50px;
+            height: 50px;
             animation: spin 1s linear infinite;
-            margin: 20px auto;
+            margin-bottom: 20px;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
         #status {
-            margin: 20px 0;
-            padding: 10px;
-            background: #e3f2fd;
-            border-radius: 5px;
-            color: #1976d2;
-            font-size: 14px;
+            font-size: 16px;
+            margin: 10px 0;
+            text-align: center;
+            padding: 0 20px;
+        }
+        #appFrame {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: none;
+        }
+        #appFrame.visible {
+            display: block;
+        }
+        #error {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            text-align: center;
+            z-index: 10000;
+        }
+        #error.visible {
+            display: block;
+        }
+        #error h2 {
+            color: #e74c3c;
+            margin-bottom: 20px;
+        }
+        #error button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        #error button:hover {
+            background: #5568d3;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🔄 Hệ thống Quản lý Vật tư</h1>
+    <div id="loading">
         <div class="spinner"></div>
-        <p class="loading">Vui lòng đợi</p>
-        <div id="status">Đang tải...</div>
-        <div id="linkContainer" style="display: none; margin-top: 30px;">
-            <p style="font-size: 16px; color: #666;">Nếu không tự động chuyển hướng, vui lòng click:</p>
-            <a id="manualLink" href="#" style="display: inline-block; margin-top: 10px; padding: 15px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 18px;">
-                📱 Vào Hệ Thống
-            </a>
-        </div>
+        <h2>Đang tải hệ thống...</h2>
+        <div id="status">Vui lòng đợi</div>
+    </div>
+    
+    <iframe id="appFrame" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+    
+    <div id="error">
+        <h2>❌ Không thể kết nối</h2>
+        <p id="errorMessage"></p>
+        <button onclick="retryLoad()">Thử lại</button>
     </div>
     
     <script>
@@ -67,31 +117,41 @@
         const GITHUB_API = 'https://api.github.com/repos/monsterph9-ops/qlvtttb-redirect/contents/current_url.txt';
         let tunnelUrl = '';
         let checkAttempts = 0;
-        const MAX_ATTEMPTS_PER_ROUND = 60; // 60 lần mỗi đợt (3 phút)
+        const MAX_ATTEMPTS_PER_ROUND = 60;
         let currentRound = 0;
-        const MAX_ROUNDS = 3; // Tối đa 3 đợt
+        const MAX_ROUNDS = 3;
         let waitingFor10Min = false;
         
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
-            console.log('[REDIRECT]', message);
+            console.log('[IFRAME]', message);
+        }
+        
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('error').classList.add('visible');
+            document.getElementById('loading').classList.add('hidden');
+        }
+        
+        function retryLoad() {
+            document.getElementById('error').classList.remove('visible');
+            document.getElementById('loading').classList.remove('hidden');
+            currentRound = 0;
+            checkAttempts = 0;
+            waitingFor10Min = false;
+            loadURL();
         }
         
         async function loadURL() {
             try {
                 updateStatus('Đang tải URL từ GitHub...');
                 
-                // Dùng GitHub API để tránh cache
                 const response = await fetch(GITHUB_API + '?t=' + Date.now(), {
                     cache: 'no-store',
-                    headers: {
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
+                    headers: { 'Accept': 'application/vnd.github.v3+json' }
                 });
                 
                 const data = await response.json();
-                
-                // Decode base64
                 tunnelUrl = atob(data.content).trim();
                 
                 if (!tunnelUrl || !tunnelUrl.startsWith('http')) {
@@ -102,15 +162,10 @@
                 
                 console.log('[URL]', tunnelUrl);
                 
-                // Hiển thị link thủ công ngay
-                const manualLink = document.getElementById('manualLink');
-                manualLink.href = tunnelUrl;
-                document.getElementById('linkContainer').style.display = 'block';
-                
-                // Bắt đầu kiểm tra
+                // Bắt đầu kiểm tra và load iframe
                 currentRound = 1;
                 checkAttempts = 0;
-                checkServerHealth();
+                checkAndLoadIframe();
                 
             } catch (error) {
                 console.error('[ERROR]', error);
@@ -119,41 +174,32 @@
             }
         }
         
-        function checkServerHealth() {
-            if (waitingFor10Min) {
-                return; // Đang đợi 10 phút
-            }
+        function checkAndLoadIframe() {
+            if (waitingFor10Min) return;
             
             checkAttempts++;
             
-            // Kiểm tra xem đã hết số lần thử trong đợt này chưa
             if (checkAttempts > MAX_ATTEMPTS_PER_ROUND) {
                 currentRound++;
                 
                 if (currentRound > MAX_ROUNDS) {
-                    // Hết 3 đợt = server thực sự tắt
-                    updateStatus('❌ Server đã bị tắt. Vui lòng liên hệ với Admin để khởi động server.');
-                    console.log('[FINAL] Server không phản hồi sau 3 đợt (9 phút + 20 phút chờ)');
+                    showError('Server đã bị tắt. Vui lòng liên hệ với Admin để khởi động server.');
                     return;
                 }
                 
-                // Bắt đầu đợt mới sau 10 phút
                 waitingFor10Min = true;
                 checkAttempts = 0;
-                const waitMinutes = 10;
-                updateStatus(`⏳ Server đang tắt. Thử lại sau ${waitMinutes} phút... (Đợt ${currentRound}/${MAX_ROUNDS})`);
-                console.log(`[ROUND ${currentRound}] Chờ ${waitMinutes} phút trước khi thử lại...`);
+                updateStatus(`⏳ Server đang tắt. Thử lại sau 10 phút... (Đợt ${currentRound}/${MAX_ROUNDS})`);
                 
                 setTimeout(() => {
                     waitingFor10Min = false;
-                    checkServerHealth();
-                }, waitMinutes * 60 * 1000); // 10 phút
+                    checkAndLoadIframe();
+                }, 10 * 60 * 1000);
                 return;
             }
             
             updateStatus(`Đang kiểm tra server... (Đợt ${currentRound}/${MAX_ROUNDS}, Lần ${checkAttempts}/${MAX_ATTEMPTS_PER_ROUND})`);
             
-            // Kiểm tra bằng fetch với timeout
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
             
@@ -167,24 +213,36 @@
                 console.log('[CHECK] Status:', response.status);
                 
                 if (response.status === 200) {
-                    // Server OK!
-                    updateStatus('✅ Server sẵn sàng! Đang chuyển hướng...');
-                    setTimeout(() => {
-                        window.location.href = tunnelUrl;
-                    }, 1000);
+                    updateStatus('✅ Server sẵn sàng! Đang tải ứng dụng...');
+                    loadAppInIframe();
                 } else {
-                    // Status khác 200 = server chưa OK
-                    console.log('[CHECK] Status không phải 200, thử lại...');
-                    updateStatus(`⏳ Server chưa sẵn sàng (Status: ${response.status})... Thử lại sau 3 giây...`);
-                    setTimeout(checkServerHealth, 3000);
+                    console.log('[CHECK] Status:', response.status, '- thử lại...');
+                    setTimeout(checkAndLoadIframe, 3000);
                 }
             })
             .catch(error => {
                 clearTimeout(timeoutId);
                 console.log('[CHECK] Lỗi:', error.message);
-                updateStatus(`⏳ Server chưa phản hồi... Thử lại sau 3 giây...`);
-                setTimeout(checkServerHealth, 3000);
+                setTimeout(checkAndLoadIframe, 3000);
             });
+        }
+        
+        function loadAppInIframe() {
+            const iframe = document.getElementById('appFrame');
+            
+            iframe.onload = () => {
+                console.log('[IFRAME] App loaded successfully');
+                document.getElementById('loading').classList.add('hidden');
+                iframe.classList.add('visible');
+            };
+            
+            iframe.onerror = () => {
+                console.error('[IFRAME] Failed to load');
+                showError('Không thể tải ứng dụng. Vui lòng thử lại.');
+            };
+            
+            // Load app trong iframe
+            iframe.src = tunnelUrl;
         }
         
         // Bắt đầu
