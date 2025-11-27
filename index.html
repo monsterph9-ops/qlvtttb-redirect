@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>Hệ thống Quản lý Vật tư</title>
-    <meta http-equiv="refresh" content="300">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -51,127 +50,63 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔄 Đang kết nối hệ thống...</h1>
+        <h1>🔄 Hệ thống Quản lý Vật tư</h1>
         <div class="spinner"></div>
         <p class="loading">Vui lòng đợi</p>
-        <div id="status">Đang kiểm tra kết nối...</div>
+        <div id="status">Đang tải...</div>
+        <div id="linkContainer" style="display: none; margin-top: 30px;">
+            <p style="font-size: 16px; color: #666;">Nếu không tự động chuyển hướng, vui lòng click:</p>
+            <a id="manualLink" href="#" style="display: inline-block; margin-top: 10px; padding: 15px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 18px;">
+                📱 Vào Hệ Thống
+            </a>
+        </div>
     </div>
     
     <script>
         // API endpoint để lấy tunnel URL mới nhất
         const API_URL = 'https://raw.githubusercontent.com/monsterph9-ops/qlvtttb-redirect/main/current_url.txt';
-        let retryCount = 0;
-        const MAX_RETRIES = 100; // Retry tối đa 100 lần (khoảng 5 phút)
         
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
             console.log('[REDIRECT]', message);
         }
         
-        // Kiểm tra server bằng iframe (không redirect nếu lỗi)
-        function checkServerAvailable(url) {
-            return new Promise((resolve) => {
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.style.width = '0';
-                iframe.style.height = '0';
-                
-                const timeout = setTimeout(() => {
-                    document.body.removeChild(iframe);
-                    console.log('[CHECK] Timeout - server không phản hồi');
-                    resolve(false);
-                }, 8000); // 8 second timeout
-                
-                iframe.onload = () => {
-                    clearTimeout(timeout);
-                    try {
-                        // Nếu load thành công và không bị Cloudflare error
-                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        const bodyText = iframeDoc.body ? iframeDoc.body.innerText : '';
-                        
-                        // Kiểm tra xem có phải trang lỗi Cloudflare không
-                        if (bodyText.includes('Web server is down') || 
-                            bodyText.includes('Error 530') ||
-                            bodyText.includes('Error 502') ||
-                            bodyText.includes('Error 503')) {
-                            console.log('[CHECK] Server trả về error page');
-                            document.body.removeChild(iframe);
-                            resolve(false);
-                        } else {
-                            console.log('[CHECK] Server OK!');
-                            document.body.removeChild(iframe);
-                            resolve(true);
-                        }
-                    } catch (e) {
-                        // Cross-origin - không đọc được content nhưng có thể là do CORS
-                        // Nếu load được thì coi như server đang chạy
-                        console.log('[CHECK] Cross-origin nhưng iframe loaded');
-                        document.body.removeChild(iframe);
-                        resolve(true);
-                    }
-                };
-                
-                iframe.onerror = () => {
-                    clearTimeout(timeout);
-                    console.log('[CHECK] Iframe error - server down');
-                    document.body.removeChild(iframe);
-                    resolve(false);
-                };
-                
-                document.body.appendChild(iframe);
-                iframe.src = url;
-            });
-        }
-        
-        async function redirectToApp() {
+        async function loadURL() {
             try {
-                retryCount++;
-                updateStatus(`Đang tải URL từ GitHub... (Lần thử: ${retryCount}/${MAX_RETRIES})`);
+                updateStatus('Đang tải URL từ GitHub...');
                 
                 const response = await fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'});
                 const url = (await response.text()).trim();
                 
                 if (!url || !url.startsWith('http')) {
                     updateStatus('❌ URL không hợp lệ. Đang thử lại sau 3 giây...');
-                    if (retryCount < MAX_RETRIES) {
-                        setTimeout(redirectToApp, 3000);
-                    } else {
-                        updateStatus('❌ Đã thử quá nhiều lần. Vui lòng liên hệ quản trị viên.');
-                    }
+                    setTimeout(loadURL, 3000);
                     return;
                 }
                 
                 console.log('[URL]', url);
-                updateStatus(`Đang kiểm tra kết nối đến server...`);
+                updateStatus('✅ Đã có URL! Đang chuyển hướng sau 2 giây...');
                 
-                // Kiểm tra server có sẵn sàng không
-                const isAvailable = await checkServerAvailable(url);
+                // Hiển thị link thủ công
+                const linkContainer = document.getElementById('linkContainer');
+                const manualLink = document.getElementById('manualLink');
+                manualLink.href = url;
+                linkContainer.style.display = 'block';
                 
-                if (isAvailable) {
-                    updateStatus('✅ Server sẵn sàng! Đang chuyển hướng...');
-                    setTimeout(() => {
-                        window.location.href = url;
-                    }, 500);
-                } else {
-                    updateStatus(`⏳ Server đang khởi động... Đang thử lại sau 3 giây... (${retryCount}/${MAX_RETRIES})`);
-                    if (retryCount < MAX_RETRIES) {
-                        setTimeout(redirectToApp, 3000);
-                    } else {
-                        updateStatus('❌ Server không phản hồi sau nhiều lần thử. Vui lòng liên hệ quản trị viên.');
-                    }
-                }
+                // Tự động chuyển hướng sau 2 giây
+                setTimeout(() => {
+                    window.location.href = url;
+                }, 2000);
                 
             } catch (error) {
                 console.error('[ERROR]', error);
                 updateStatus('❌ Lỗi kết nối đến GitHub. Đang thử lại sau 5 giây...');
-                if (retryCount < MAX_RETRIES) {
-                    setTimeout(redirectToApp, 5000);
-                }
+                setTimeout(loadURL, 5000);
             }
         }
         
-        // Bắt đầu redirect
-        redirectToApp();
+        // Bắt đầu
+        loadURL();
     </script>
 </body>
 </html>
