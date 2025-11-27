@@ -60,39 +60,85 @@
     <script>
         // API endpoint để lấy tunnel URL mới nhất
         const API_URL = 'https://raw.githubusercontent.com/monsterph9-ops/qlvtttb-redirect/main/current_url.txt';
+        let retryCount = 0;
+        const MAX_RETRIES = 100; // Retry tối đa 100 lần (khoảng 5 phút)
         
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
-            console.log('[REDIRECT PAGE]', message);
+            console.log('[REDIRECT]', message);
         }
         
-        function redirectToApp() {
-            updateStatus('Đang tải URL từ GitHub...');
-            
-            fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'})
-                .then(response => response.text())
-                .then(url => {
-                    url = url.trim();
-                    
-                    if (!url || !url.startsWith('http')) {
-                        updateStatus('❌ URL không hợp lệ. Đang thử lại sau 5 giây...');
-                        setTimeout(redirectToApp, 5000);
-                        return;
+        // Kiểm tra server bằng image ping (không bị CORS)
+        function checkServerAvailable(url) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                const timeout = setTimeout(() => {
+                    img.src = ''; // Cancel request
+                    resolve(false);
+                }, 5000); // 5 second timeout
+                
+                img.onload = () => {
+                    clearTimeout(timeout);
+                    resolve(true); // Server responds (even 404 is OK, means server is up)
+                };
+                
+                img.onerror = () => {
+                    clearTimeout(timeout);
+                    // Error could mean server is down OR image doesn't exist
+                    // We'll check with a HEAD request to root
+                    resolve(false);
+                };
+                
+                // Try to load favicon or root
+                img.src = url + '/favicon.ico?t=' + Date.now();
+            });
+        }
+        
+        async function redirectToApp() {
+            try {
+                retryCount++;
+                updateStatus(`Đang tải URL từ GitHub... (Lần thử: ${retryCount}/${MAX_RETRIES})`);
+                
+                const response = await fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'});
+                const url = (await response.text()).trim();
+                
+                if (!url || !url.startsWith('http')) {
+                    updateStatus('❌ URL không hợp lệ. Đang thử lại sau 3 giây...');
+                    if (retryCount < MAX_RETRIES) {
+                        setTimeout(redirectToApp, 3000);
+                    } else {
+                        updateStatus('❌ Đã thử quá nhiều lần. Vui lòng liên hệ quản trị viên.');
                     }
-                    
-                    console.log('[URL] Tunnel URL:', url);
-                    updateStatus('✅ Đã có URL! Đang chuyển hướng...');
-                    
-                    // Redirect ngay - browser sẽ tự phát hiện lỗi 530
+                    return;
+                }
+                
+                console.log('[URL]', url);
+                updateStatus(`Đang kiểm tra kết nối đến server...`);
+                
+                // Kiểm tra server có sẵn sàng không
+                const isAvailable = await checkServerAvailable(url);
+                
+                if (isAvailable) {
+                    updateStatus('✅ Server sẵn sàng! Đang chuyển hướng...');
                     setTimeout(() => {
                         window.location.href = url;
-                    }, 1000);
-                })
-                .catch(error => {
-                    console.error('[ERROR]', error);
-                    updateStatus('❌ Lỗi kết nối đến GitHub. Đang thử lại sau 5 giây...');
+                    }, 500);
+                } else {
+                    updateStatus(`⏳ Server đang khởi động... Đang thử lại sau 3 giây... (${retryCount}/${MAX_RETRIES})`);
+                    if (retryCount < MAX_RETRIES) {
+                        setTimeout(redirectToApp, 3000);
+                    } else {
+                        updateStatus('❌ Server không phản hồi sau nhiều lần thử. Vui lòng liên hệ quản trị viên.');
+                    }
+                }
+                
+            } catch (error) {
+                console.error('[ERROR]', error);
+                updateStatus('❌ Lỗi kết nối đến GitHub. Đang thử lại sau 5 giây...');
+                if (retryCount < MAX_RETRIES) {
                     setTimeout(redirectToApp, 5000);
-                });
+                }
+            }
         }
         
         // Bắt đầu redirect
