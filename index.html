@@ -68,29 +68,58 @@
             console.log('[REDIRECT]', message);
         }
         
-        // Kiểm tra server bằng image ping (không bị CORS)
+        // Kiểm tra server bằng iframe (không redirect nếu lỗi)
         function checkServerAvailable(url) {
             return new Promise((resolve) => {
-                const img = new Image();
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.style.width = '0';
+                iframe.style.height = '0';
+                
                 const timeout = setTimeout(() => {
-                    img.src = ''; // Cancel request
+                    document.body.removeChild(iframe);
+                    console.log('[CHECK] Timeout - server không phản hồi');
                     resolve(false);
-                }, 5000); // 5 second timeout
+                }, 8000); // 8 second timeout
                 
-                img.onload = () => {
+                iframe.onload = () => {
                     clearTimeout(timeout);
-                    resolve(true); // Server responds (even 404 is OK, means server is up)
+                    try {
+                        // Nếu load thành công và không bị Cloudflare error
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        const bodyText = iframeDoc.body ? iframeDoc.body.innerText : '';
+                        
+                        // Kiểm tra xem có phải trang lỗi Cloudflare không
+                        if (bodyText.includes('Web server is down') || 
+                            bodyText.includes('Error 530') ||
+                            bodyText.includes('Error 502') ||
+                            bodyText.includes('Error 503')) {
+                            console.log('[CHECK] Server trả về error page');
+                            document.body.removeChild(iframe);
+                            resolve(false);
+                        } else {
+                            console.log('[CHECK] Server OK!');
+                            document.body.removeChild(iframe);
+                            resolve(true);
+                        }
+                    } catch (e) {
+                        // Cross-origin - không đọc được content nhưng có thể là do CORS
+                        // Nếu load được thì coi như server đang chạy
+                        console.log('[CHECK] Cross-origin nhưng iframe loaded');
+                        document.body.removeChild(iframe);
+                        resolve(true);
+                    }
                 };
                 
-                img.onerror = () => {
+                iframe.onerror = () => {
                     clearTimeout(timeout);
-                    // Error could mean server is down OR image doesn't exist
-                    // We'll check with a HEAD request to root
+                    console.log('[CHECK] Iframe error - server down');
+                    document.body.removeChild(iframe);
                     resolve(false);
                 };
                 
-                // Try to load favicon or root
-                img.src = url + '/favicon.ico?t=' + Date.now();
+                document.body.appendChild(iframe);
+                iframe.src = url;
             });
         }
         
