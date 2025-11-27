@@ -124,118 +124,38 @@
             
             updateStatus(`Đang kiểm tra server... (${checkAttempts}/${MAX_ATTEMPTS})`);
             
-            // Tạo iframe ẩn
-            const iframe = document.createElement('iframe');
-            iframe.style.position = 'absolute';
-            iframe.style.width = '1px';
-            iframe.style.height = '1px';
-            iframe.style.left = '-9999px';
-            iframe.style.opacity = '0';
+            // Kiểm tra bằng fetch với timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
             
-            let loadCount = 0;
-            let isResolved = false;
-            
-            // Timeout 8 giây - đợi lâu hơn
-            const timeout = setTimeout(() => {
-                if (!isResolved) {
-                    isResolved = true;
-                    console.log('[CHECK] Timeout - thử lại');
-                    try { document.body.removeChild(iframe); } catch(e) {}
-                    updateStatus(`⏳ Server đang khởi động... Thử lại sau 3 giây...`);
-                    setTimeout(checkWithIframe, 3000);
-                }
-            }, 8000);
-            
-            // Nếu iframe load
-            iframe.onload = () => {
-                loadCount++;
-                console.log('[CHECK] Iframe onload event, count:', loadCount);
+            fetch(tunnelUrl + '/health', {
+                method: 'GET',
+                signal: controller.signal,
+                cache: 'no-store'
+            })
+            .then(response => {
+                clearTimeout(timeoutId);
+                console.log('[CHECK] Status:', response.status);
                 
-                // Đợi thêm 2 giây để chắc chắn page đã render
-                setTimeout(() => {
-                    if (!isResolved) {
-                        isResolved = true;
-                        clearTimeout(timeout);
-                        
-                        let serverOK = false;
-                        let errorDetected = false;
-                        
-                        // Kiểm tra xem có phải error page không
-                        try {
-                            const doc = iframe.contentDocument || iframe.contentWindow.document;
-                            const title = doc.title || '';
-                            const bodyText = doc.body ? doc.body.innerText.toLowerCase() : '';
-                            const html = doc.documentElement ? doc.documentElement.innerHTML.toLowerCase() : '';
-                            
-                            console.log('[CHECK] Title:', title);
-                            console.log('[CHECK] Body text (first 200):', bodyText.substring(0, 200));
-                            
-                            // Kiểm tra các dấu hiệu của error page
-                            if (title.toLowerCase().includes('error') ||
-                                title.includes('530') || title.includes('502') || title.includes('503') ||
-                                bodyText.includes('web server is down') ||
-                                bodyText.includes('error 530') || bodyText.includes('error 502') || 
-                                bodyText.includes('error 503') || bodyText.includes('error 524') ||
-                                bodyText.includes('connection timed out') ||
-                                html.includes('cf-error') || html.includes('cloudflare')) {
-                                
-                                console.log('[CHECK] ❌ Phát hiện error page!');
-                                errorDetected = true;
-                            } else {
-                                console.log('[CHECK] ✅ Không có error, server OK');
-                                serverOK = true;
-                            }
-                        } catch (e) {
-                            // Cross-origin = không đọc được, nhưng đã load = có thể server OK
-                            // NHƯNG cần cẩn thận vì Cloudflare error page cũng có thể cross-origin
-                            console.log('[CHECK] Cross-origin error:', e.message);
-                            
-                            // Nếu là lần load đầu tiên và cross-origin, cho là OK
-                            // (vì app thật sẽ cross-origin do CORS)
-                            if (loadCount === 1) {
-                                console.log('[CHECK] ✅ Cross-origin nhưng coi như OK (CORS từ app)');
-                                serverOK = true;
-                            } else {
-                                console.log('[CHECK] ⚠️ Cross-origin nhưng không chắc, thử lại');
-                                errorDetected = true;
-                            }
-                        }
-                        
-                        try { document.body.removeChild(iframe); } catch(e) {}
-                        
-                        if (errorDetected) {
-                            updateStatus(`⏳ Server chưa sẵn sàng (Error page detected)... Thử lại sau 3 giây...`);
-                            setTimeout(checkWithIframe, 3000);
-                        } else if (serverOK) {
-                            updateStatus('✅ Server sẵn sàng! Đang chuyển hướng...');
-                            setTimeout(() => {
-                                window.location.href = tunnelUrl;
-                            }, 1000);
-                        } else {
-                            // Không chắc chắn, thử lại
-                            updateStatus(`⏳ Không xác định được trạng thái... Thử lại sau 3 giây...`);
-                            setTimeout(checkWithIframe, 3000);
-                        }
-                    }
-                }, 2000); // Đợi 2 giây sau khi onload
-            };
-            
-            // Nếu iframe lỗi
-            iframe.onerror = () => {
-                if (!isResolved) {
-                    isResolved = true;
-                    clearTimeout(timeout);
-                    console.log('[CHECK] Iframe error event');
-                    try { document.body.removeChild(iframe); } catch(e) {}
-                    updateStatus(`⏳ Không thể kết nối... Thử lại sau 3 giây...`);
+                if (response.status === 200) {
+                    // Server OK!
+                    updateStatus('✅ Server sẵn sàng! Đang chuyển hướng...');
+                    setTimeout(() => {
+                        window.location.href = tunnelUrl;
+                    }, 1000);
+                } else {
+                    // Status khác 200 = server chưa OK
+                    console.log('[CHECK] Status không phải 200, thử lại...');
+                    updateStatus(`⏳ Server chưa sẵn sàng (Status: ${response.status})... Thử lại sau 3 giây...`);
                     setTimeout(checkWithIframe, 3000);
                 }
-            };
-            
-            // Thêm iframe vào DOM và load
-            document.body.appendChild(iframe);
-            console.log('[CHECK] Bắt đầu load iframe:', tunnelUrl);
-            iframe.src = tunnelUrl;
+            })
+            .catch(error => {
+                clearTimeout(timeoutId);
+                console.log('[CHECK] Lỗi:', error.message);
+                updateStatus(`⏳ Server chưa phản hồi... Thử lại sau 3 giây...`);
+                setTimeout(checkWithIframe, 3000);
+            });
         }
         
         // Bắt đầu
