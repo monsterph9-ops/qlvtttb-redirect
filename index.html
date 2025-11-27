@@ -67,7 +67,10 @@
         const GITHUB_API = 'https://api.github.com/repos/monsterph9-ops/qlvtttb-redirect/contents/current_url.txt';
         let tunnelUrl = '';
         let checkAttempts = 0;
-        const MAX_ATTEMPTS = 60;
+        const MAX_ATTEMPTS_PER_ROUND = 60; // 60 lần mỗi đợt (3 phút)
+        let currentRound = 0;
+        const MAX_ROUNDS = 3; // Tối đa 3 đợt
+        let waitingFor10Min = false;
         
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
@@ -104,8 +107,10 @@
                 manualLink.href = tunnelUrl;
                 document.getElementById('linkContainer').style.display = 'block';
                 
-                // Bắt đầu kiểm tra bằng iframe
-                checkWithIframe();
+                // Bắt đầu kiểm tra
+                currentRound = 1;
+                checkAttempts = 0;
+                checkServerHealth();
                 
             } catch (error) {
                 console.error('[ERROR]', error);
@@ -114,15 +119,39 @@
             }
         }
         
-        function checkWithIframe() {
+        function checkServerHealth() {
+            if (waitingFor10Min) {
+                return; // Đang đợi 10 phút
+            }
+            
             checkAttempts++;
             
-            if (checkAttempts > MAX_ATTEMPTS) {
-                updateStatus('⚠️ Server mất nhiều thời gian khởi động. Vui lòng click nút bên dưới để vào hệ thống.');
+            // Kiểm tra xem đã hết số lần thử trong đợt này chưa
+            if (checkAttempts > MAX_ATTEMPTS_PER_ROUND) {
+                currentRound++;
+                
+                if (currentRound > MAX_ROUNDS) {
+                    // Hết 3 đợt = server thực sự tắt
+                    updateStatus('❌ Server đã bị tắt. Vui lòng liên hệ với Admin để khởi động server.');
+                    console.log('[FINAL] Server không phản hồi sau 3 đợt (9 phút + 20 phút chờ)');
+                    return;
+                }
+                
+                // Bắt đầu đợt mới sau 10 phút
+                waitingFor10Min = true;
+                checkAttempts = 0;
+                const waitMinutes = 10;
+                updateStatus(`⏳ Server đang tắt. Thử lại sau ${waitMinutes} phút... (Đợt ${currentRound}/${MAX_ROUNDS})`);
+                console.log(`[ROUND ${currentRound}] Chờ ${waitMinutes} phút trước khi thử lại...`);
+                
+                setTimeout(() => {
+                    waitingFor10Min = false;
+                    checkServerHealth();
+                }, waitMinutes * 60 * 1000); // 10 phút
                 return;
             }
             
-            updateStatus(`Đang kiểm tra server... (${checkAttempts}/${MAX_ATTEMPTS})`);
+            updateStatus(`Đang kiểm tra server... (Đợt ${currentRound}/${MAX_ROUNDS}, Lần ${checkAttempts}/${MAX_ATTEMPTS_PER_ROUND})`);
             
             // Kiểm tra bằng fetch với timeout
             const controller = new AbortController();
@@ -147,14 +176,14 @@
                     // Status khác 200 = server chưa OK
                     console.log('[CHECK] Status không phải 200, thử lại...');
                     updateStatus(`⏳ Server chưa sẵn sàng (Status: ${response.status})... Thử lại sau 3 giây...`);
-                    setTimeout(checkWithIframe, 3000);
+                    setTimeout(checkServerHealth, 3000);
                 }
             })
             .catch(error => {
                 clearTimeout(timeoutId);
                 console.log('[CHECK] Lỗi:', error.message);
                 updateStatus(`⏳ Server chưa phản hồi... Thử lại sau 3 giây...`);
-                setTimeout(checkWithIframe, 3000);
+                setTimeout(checkServerHealth, 3000);
             });
         }
         
