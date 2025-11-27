@@ -65,6 +65,9 @@
     <script>
         // API endpoint để lấy tunnel URL mới nhất
         const API_URL = 'https://raw.githubusercontent.com/monsterph9-ops/qlvtttb-redirect/main/current_url.txt';
+        let tunnelUrl = '';
+        let checkAttempts = 0;
+        const MAX_ATTEMPTS = 60;
         
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
@@ -76,33 +79,115 @@
                 updateStatus('Đang tải URL từ GitHub...');
                 
                 const response = await fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'});
-                const url = (await response.text()).trim();
+                tunnelUrl = (await response.text()).trim();
                 
-                if (!url || !url.startsWith('http')) {
+                if (!tunnelUrl || !tunnelUrl.startsWith('http')) {
                     updateStatus('❌ URL không hợp lệ. Đang thử lại sau 3 giây...');
                     setTimeout(loadURL, 3000);
                     return;
                 }
                 
-                console.log('[URL]', url);
-                updateStatus('✅ Đã có URL! Đang chuyển hướng sau 2 giây...');
+                console.log('[URL]', tunnelUrl);
                 
-                // Hiển thị link thủ công
-                const linkContainer = document.getElementById('linkContainer');
+                // Hiển thị link thủ công ngay
                 const manualLink = document.getElementById('manualLink');
-                manualLink.href = url;
-                linkContainer.style.display = 'block';
+                manualLink.href = tunnelUrl;
+                document.getElementById('linkContainer').style.display = 'block';
                 
-                // Tự động chuyển hướng sau 2 giây
-                setTimeout(() => {
-                    window.location.href = url;
-                }, 2000);
+                // Bắt đầu kiểm tra bằng iframe
+                checkWithIframe();
                 
             } catch (error) {
                 console.error('[ERROR]', error);
                 updateStatus('❌ Lỗi kết nối đến GitHub. Đang thử lại sau 5 giây...');
                 setTimeout(loadURL, 5000);
             }
+        }
+        
+        function checkWithIframe() {
+            checkAttempts++;
+            
+            if (checkAttempts > MAX_ATTEMPTS) {
+                updateStatus('⚠️ Server mất nhiều thời gian khởi động. Vui lòng click nút bên dưới để vào hệ thống.');
+                return;
+            }
+            
+            updateStatus(`Đang kiểm tra server... (${checkAttempts}/${MAX_ATTEMPTS})`);
+            
+            // Tạo iframe ẩn
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'absolute';
+            iframe.style.width = '1px';
+            iframe.style.height = '1px';
+            iframe.style.left = '-9999px';
+            iframe.style.opacity = '0';
+            
+            let isResolved = false;
+            
+            // Timeout 5 giây
+            const timeout = setTimeout(() => {
+                if (!isResolved) {
+                    isResolved = true;
+                    console.log('[CHECK] Timeout - thử lại');
+                    document.body.removeChild(iframe);
+                    updateStatus(`⏳ Server đang khởi động... Thử lại sau 3 giây...`);
+                    setTimeout(checkWithIframe, 3000);
+                }
+            }, 5000);
+            
+            // Nếu iframe load thành công
+            iframe.onload = () => {
+                if (!isResolved) {
+                    isResolved = true;
+                    clearTimeout(timeout);
+                    
+                    // Kiểm tra xem có phải error page không
+                    try {
+                        // Thử đọc title (nếu same-origin)
+                        const doc = iframe.contentDocument || iframe.contentWindow.document;
+                        const title = doc.title || '';
+                        const body = doc.body ? doc.body.innerText : '';
+                        
+                        console.log('[CHECK] Title:', title);
+                        
+                        // Nếu có Cloudflare error
+                        if (title.includes('Error') || body.includes('Web server is down') || 
+                            body.includes('Error 530') || body.includes('Error 502') || body.includes('Error 503')) {
+                            console.log('[CHECK] Phát hiện error page, thử lại...');
+                            document.body.removeChild(iframe);
+                            updateStatus(`⏳ Server chưa sẵn sàng... Thử lại sau 3 giây...`);
+                            setTimeout(checkWithIframe, 3000);
+                            return;
+                        }
+                    } catch (e) {
+                        // Cross-origin = không đọc được, nhưng đã load = server OK
+                        console.log('[CHECK] Cross-origin (CORS), coi như server OK');
+                    }
+                    
+                    // Server sẵn sàng!
+                    document.body.removeChild(iframe);
+                    updateStatus('✅ Server sẵn sàng! Đang chuyển hướng...');
+                    setTimeout(() => {
+                        window.location.href = tunnelUrl;
+                    }, 1000);
+                }
+            };
+            
+            // Nếu iframe lỗi
+            iframe.onerror = () => {
+                if (!isResolved) {
+                    isResolved = true;
+                    clearTimeout(timeout);
+                    console.log('[CHECK] Iframe error - thử lại');
+                    document.body.removeChild(iframe);
+                    updateStatus(`⏳ Không thể kết nối... Thử lại sau 3 giây...`);
+                    setTimeout(checkWithIframe, 3000);
+                }
+            };
+            
+            // Thêm iframe vào DOM và load
+            document.body.appendChild(iframe);
+            iframe.src = tunnelUrl;
         }
         
         // Bắt đầu
