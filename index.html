@@ -60,38 +60,90 @@
     <script>
         // API endpoint để lấy tunnel URL mới nhất
         const API_URL = 'https://raw.githubusercontent.com/monsterph9-ops/qlvtttb-redirect/main/current_url.txt';
+        let retryCount = 0;
+        let checkInterval;
         
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
+            console.log('[REDIRECT PAGE]', message);
         }
         
-        function redirectToApp() {
-            updateStatus('Đang tải URL từ GitHub...');
-            
-            fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'})
-                .then(response => response.text())
-                .then(url => {
-                    url = url.trim();
+        // Kiểm tra xem server có sẵn sàng không
+        async function checkServerHealth(url) {
+            try {
+                updateStatus(`Đang kiểm tra kết nối đến server... (Lần thử: ${retryCount + 1})`);
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // Timeout 5s
+                
+                const response = await fetch(url + '/health', {
+                    method: 'GET',
+                    signal: controller.signal,
+                    cache: 'no-store'
+                });
+                
+                clearTimeout(timeoutId);
+                
+                console.log('[HEALTH CHECK] Status:', response.status);
+                
+                if (response.ok) {
+                    return { success: true, status: response.status };
+                } else if (response.status === 530 || response.status === 502 || response.status === 503) {
+                    return { success: false, status: response.status, error: 'Server đang khởi động' };
+                } else {
+                    return { success: false, status: response.status, error: 'Server lỗi' };
+                }
+            } catch (error) {
+                console.log('[HEALTH CHECK] Error:', error.message);
+                return { success: false, error: error.message };
+            }
+        }
+        
+        async function redirectToApp() {
+            try {
+                updateStatus('Đang tải URL từ GitHub...');
+                
+                const response = await fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'});
+                const url = (await response.text()).trim();
+                
+                if (!url || !url.startsWith('http')) {
+                    updateStatus('❌ URL không hợp lệ. Vui lòng thử lại sau.');
+                    return;
+                }
+                
+                console.log('[URL] Tunnel URL:', url);
+                
+                // Kiểm tra kết nối trước khi redirect
+                const healthCheck = await checkServerHealth(url);
+                
+                if (healthCheck.success) {
+                    updateStatus('✅ Server sẵn sàng! Đang chuyển hướng...');
+                    clearInterval(checkInterval);
                     
-                    if (!url || !url.startsWith('http')) {
-                        updateStatus('Lỗi: URL không hợp lệ. Vui lòng thử lại sau.');
-                        return;
-                    }
-                    
-                    updateStatus('Đang chuyển hướng đến ứng dụng...');
-                    
-                    // Redirect 1 lần duy nhất
                     setTimeout(() => {
                         window.location.href = url;
-                    }, 500);
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    updateStatus('Lỗi kết nối đến GitHub. Vui lòng thử lại sau.');
-                });
+                    }, 1000);
+                } else {
+                    retryCount++;
+                    
+                    if (healthCheck.status === 530 || healthCheck.status === 502 || healthCheck.status === 503) {
+                        updateStatus(`⏳ Server đang khởi động (Lỗi ${healthCheck.status}). Đang thử lại sau 3 giây...`);
+                    } else {
+                        updateStatus(`⚠️ Không thể kết nối (${healthCheck.error}). Đang thử lại sau 3 giây...`);
+                    }
+                    
+                    // Thử lại sau 3 giây
+                    setTimeout(redirectToApp, 3000);
+                }
+                
+            } catch (error) {
+                console.error('[ERROR]', error);
+                updateStatus('❌ Lỗi kết nối đến GitHub. Đang thử lại sau 5 giây...');
+                setTimeout(redirectToApp, 5000);
+            }
         }
         
-        // Luôn luôn redirect - GitHub Pages chỉ là điểm trung gian
+        // Bắt đầu kiểm tra và redirect
         redirectToApp();
     </script>
 </body>
