@@ -2,7 +2,8 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Chuyển hướng...</title>
+    <title>Hệ thống Quản lý Vật tư</title>
+    <meta http-equiv="refresh" content="300">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -10,6 +11,7 @@
             padding: 50px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
+            margin: 0;
         }
         .container {
             background: white;
@@ -37,59 +39,81 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .manual-link {
-            margin-top: 30px;
-            padding: 15px;
-            background: #f0f0f0;
-            border-radius: 8px;
-        }
-        .manual-link a {
-            color: #667eea;
-            font-weight: bold;
-            text-decoration: none;
-        }
-        .manual-link a:hover {
-            text-decoration: underline;
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            background: #e3f2fd;
+            border-radius: 5px;
+            color: #1976d2;
+            font-size: 14px;
         }
     </style>
-    <script>
-        // API endpoint để lấy tunnel URL mới nhất
-        const API_URL = 'https://raw.githubusercontent.com/monsterph9-ops/qlvtttb-redirect/main/current_url.txt';
-        
-        // Thử redirect tự động
-        fetch(API_URL)
-            .then(response => response.text())
-            .then(url => {
-                if (url && url.startsWith('http')) {
-                    setTimeout(() => {
-                        window.location.href = url.trim();
-                    }, 1000);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-            });
-    </script>
 </head>
 <body>
     <div class="container">
-        <h1>🔄 Đang chuyển hướng...</h1>
+        <h1>🔄 Đang kết nối hệ thống...</h1>
         <div class="spinner"></div>
-        <p class="loading">Vui lòng đợi trong giây lát</p>
-        
-        <div class="manual-link">
-            <p>Nếu không tự động chuyển, nhấn vào đây:</p>
-            <a href="#" id="manual-link" target="_blank">Truy cập hệ thống</a>
-        </div>
+        <p class="loading">Vui lòng đợi</p>
+        <div id="status">Đang kiểm tra kết nối...</div>
     </div>
     
     <script>
-        // Backup: hiển thị link thủ công
-        fetch(API_URL)
-            .then(response => response.text())
-            .then(url => {
-                document.getElementById('manual-link').href = url.trim();
-            });
+        // API endpoint để lấy tunnel URL mới nhất
+        const API_URL = 'https://raw.githubusercontent.com/monsterph9-ops/qlvtttb-redirect/main/current_url.txt';
+        const STORAGE_KEY = 'qlvtttb_current_url';
+        const CHECK_INTERVAL = 5000; // Kiểm tra mỗi 5 giây
+        
+        let currentUrl = localStorage.getItem(STORAGE_KEY);
+        let checkTimer = null;
+        
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+        
+        function redirectToApp(url) {
+            // Lưu URL hiện tại vào localStorage
+            localStorage.setItem(STORAGE_KEY, url);
+            
+            // Chuyển hướng ngay
+            updateStatus('Đang chuyển hướng...');
+            window.location.replace(url.trim());
+        }
+        
+        function checkAndRedirect() {
+            fetch(API_URL + '?t=' + Date.now(), {cache: 'no-store'})
+                .then(response => response.text())
+                .then(newUrl => {
+                    newUrl = newUrl.trim();
+                    
+                    if (!newUrl || !newUrl.startsWith('http')) {
+                        updateStatus('Lỗi: URL không hợp lệ');
+                        return;
+                    }
+                    
+                    // Nếu chưa có URL hoặc URL thay đổi
+                    if (!currentUrl || currentUrl !== newUrl) {
+                        updateStatus('Phát hiện server mới, đang kết nối...');
+                        redirectToApp(newUrl);
+                    } else {
+                        // URL giống nhau, redirect luôn
+                        redirectToApp(newUrl);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    updateStatus('Lỗi kết nối, đang thử lại...');
+                    
+                    // Nếu có URL cũ trong cache, thử dùng
+                    if (currentUrl) {
+                        setTimeout(() => {
+                            redirectToApp(currentUrl);
+                        }, 2000);
+                    }
+                });
+        }
+        
+        // Kiểm tra và redirect ngay khi load trang
+        checkAndRedirect();
     </script>
 </body>
 </html>
