@@ -91,10 +91,8 @@
                 });
         }
         
-        // Chỉ redirect nếu đang ở trang GitHub Pages
-        if (window.location.hostname.includes('github.io')) {
-            redirectToApp();
-        }
+        // Luôn luôn redirect - GitHub Pages chỉ là điểm trung gian
+        redirectToApp();
     </script>
 </body>
 </html>
